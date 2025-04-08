@@ -1,0 +1,11 @@
+# PSCloud Exporter Configuration
+username: "your_username"
+password: "your_password"
+baseUrl: "https://api.ps.kz/v1"
+useHttp: false
+
+# Web server configuration
+web:
+  listenAddress: ":9116"
+  metricsPrefix: "pskz"
+  telemetryPath: "/metrics" 

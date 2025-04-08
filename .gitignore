@@ -32,17 +32,23 @@ vendor/
 # Go workspace file
 go.work
 
-# Temporary files
-*.tmp
-.tmp*
-*.log
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-# Debug files
-debug/
+# Binary files
+pscloud-exporter
 
-# Project specific
-.yed**
-.test/
+# Build output
+dist/
+build/
+
+# Benchmark report
+benchmark-report.md
+
+# IDE specific files
+.vscode/
 
 # OS specific
 .DS_Store
@@ -53,9 +59,10 @@ debug/
 ehthumbs.db
 Thumbs.db
 
-# Build output
-dist/
-build/
+# Logs
+*.log
+logs/
 
-# Benchmark report
-benchmark-report.md
+# Temporary files
+tmp/
+temp/

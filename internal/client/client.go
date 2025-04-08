@@ -1,14 +1,19 @@
 package client
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 )
 
+// API endpoints
 const (
-	baseURL = "https://api.ps.kz"
-
 	// API endpoints
 	balanceEndpoint          = "/client/get-balance"
 	clientDomainListEndpoint = "/client/get-domain-list" // Client API endpoint
@@ -25,49 +30,71 @@ const (
 
 	// Output format
 	outputFormatJSON = "json"
+
+	// OIDC endpoints
+	oidcTokenEndpoint = "https://auth.ps.kz/oidc/token"
 )
 
 // Client represents PS.KZ API client
+// Note: API credentials (username and password) are different from your personal account credentials.
+// To get API access, visit: https://old.ps.kz/client/api
 type Client struct {
-	client   *resty.Client
-	username string
-	password string
+	client       *resty.Client
+	username     string
+	password     string
+	baseURL      string
+	token        *Token
+	useHTTP      bool
+	clientSecret string
+	codeVerifier string
 }
 
-// Common response structures
+// Token represents OIDC token response
+type Token struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	IDToken      string `json:"id_token"`
+	ExpiresAt    time.Time
+}
+
+// Response represents common API response structure
 type Response struct {
 	Result string      `json:"result"`
 	Answer interface{} `json:"answer"`
+	Body   []byte      // Raw response body
 }
 
-// Balance related structures
+// BalanceResponse represents balance information response
 type BalanceResponse struct {
-	Result string      `json:"result"`
-	Answer BalanceInfo `json:"answer"`
+	Answer struct {
+		Prepay     string `json:"prepay"`
+		Credit     string `json:"credit"`
+		CreditInfo struct {
+			Debt string `json:"debt"`
+		} `json:"credit_info"`
+	} `json:"answer"`
 }
 
-type BalanceInfo struct {
-	Prepay     string     `json:"prepay"`
-	Credit     string     `json:"credit"`
-	CreditInfo CreditInfo `json:"credit_info"`
-}
-
-type CreditInfo struct {
-	Active  string `json:"active"`
-	Debt    string `json:"debt"`
-	PayTill string `json:"pay_till"`
-}
-
-// Domain related structures
+// DomainListResponse represents domain list response
 type DomainListResponse struct {
 	Result string   `json:"result"`
 	Answer []Domain `json:"answer"`
 }
 
+// Domain represents domain information
 type Domain struct {
 	Domain     string `json:"domain"`
 	ExpiryDate string `json:"expirydate"`
 	Status     string `json:"status"`
+}
+
+// ClientDomainListResponse represents client domain list response
+type ClientDomainListResponse struct {
+	Result string   `json:"result"`
+	Answer []Domain `json:"answer"`
 }
 
 // Profile related structures
@@ -191,357 +218,308 @@ type InvoiceItem struct {
 	Amount      string `json:"amount"`
 }
 
+// generateCodeVerifier generates a random code verifier for PKCE
+func generateCodeVerifier() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// generateCodeChallenge generates a code challenge from the code verifier
+func generateCodeChallenge(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
+
 // New creates a new PS.KZ API client
-func New(username, password string) *Client {
+func New(username, password, baseURL string, useHTTP bool) *Client {
+	c := &Client{
+		client:   resty.New(),
+		username: username,
+		password: password,
+		baseURL:  baseURL,
+		useHTTP:  useHTTP,
+	}
+
+	// Generate code_verifier for PKCE
+	verifier, err := generateCodeVerifier()
+	if err != nil {
+		// Use default value if generation fails
+		verifier = "default_code_verifier"
+	}
+	c.codeVerifier = verifier
+
+	// Use username as client_secret
+	c.clientSecret = username
+
+	return c
+}
+
+// SetBaseURL sets the base URL for API requests
+func (c *Client) SetBaseURL(url string) {
+	c.baseURL = url
+}
+
+// authenticate performs OIDC authentication and obtains a token
+func (c *Client) authenticate() error {
+	challenge := generateCodeChallenge(c.codeVerifier)
+
+	resp, err := c.client.R().
+		SetHeader("Content-Type", "application/x-www-form-urlencoded").
+		SetFormData(map[string]string{
+			"grant_type":            "password",
+			"username":              c.username,
+			"password":              c.password,
+			"client_id":             "ps.kz",
+			"client_secret":         c.clientSecret,
+			"code_verifier":         c.codeVerifier,
+			"code_challenge":        challenge,
+			"code_challenge_method": "S256",
+		}).
+		Post(oidcTokenEndpoint)
+
+	if err != nil {
+		return fmt.Errorf("authentication request failed: %v", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("authentication failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	var token Token
+	if err := json.Unmarshal(resp.Body(), &token); err != nil {
+		return fmt.Errorf("failed to parse token response: %v", err)
+	}
+
+	token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	c.token = &token
+
+	// Set token for all subsequent requests
+	c.client.SetAuthToken(token.AccessToken)
+
+	return nil
+}
+
+// ensureToken ensures that we have a valid token
+func (c *Client) ensureToken() error {
+	if c.token == nil || time.Now().After(c.token.ExpiresAt) {
+		return c.authenticate()
+	}
+	return nil
+}
+
+// Do executes API request with authentication
+func (c *Client) Do(method, path string) (*Response, error) {
+	// Ensure we have a valid token
+	if err := c.ensureToken(); err != nil {
+		return nil, err
+	}
+
 	client := resty.New().
-		SetBaseURL(baseURL).
+		SetBaseURL(c.baseURL).
 		SetHeader("Content-Type", "application/json").
+		SetHeader("Authorization", "Bearer "+c.token.AccessToken).
 		SetQueryParams(map[string]string{
 			"output_format": outputFormatJSON,
 		})
 
-	return &Client{
-		client:   client,
-		username: username,
-		password: password,
+	resp, err := client.R().Execute(method, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
+
+	var response Response
+	response.Body = resp.Body() // Save raw response body
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &response, nil
 }
 
 // GetBalance returns account balance information
 func (c *Client) GetBalance() (*BalanceResponse, error) {
-	var response BalanceResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-		}).
-		SetResult(&response).
-		Get(balanceEndpoint)
-
+	resp, err := c.Do("GET", balanceEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get balance: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var balanceResp BalanceResponse
+	if err := json.Unmarshal(resp.Body, &balanceResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal balance response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &balanceResp, nil
 }
 
-// GetClientDomainList returns list of domains using client API
-func (c *Client) GetClientDomainList() (*DomainListResponse, error) {
-	var response DomainListResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username":      c.username,
-			"password":      c.password,
-			"input_format":  "http",
-			"output_format": outputFormatJSON,
-		}).
-		SetResult(&response).
-		Get(clientDomainListEndpoint)
-
+// GetClientDomainList returns list of client domains
+func (c *Client) GetClientDomainList() (*ClientDomainListResponse, error) {
+	resp, err := c.Do("GET", clientDomainListEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client domain list: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var domainResp ClientDomainListResponse
+	if err := json.Unmarshal(resp.Body, &domainResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal client domain list response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &domainResp, nil
 }
 
-// GetDomainList returns list of domains using domain API
+// GetDomainList returns list of domains
 func (c *Client) GetDomainList() (*DomainListResponse, error) {
-	var response DomainListResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username":      c.username,
-			"password":      c.password,
-			"input_format":  "http",
-			"output_format": outputFormatJSON,
-		}).
-		SetResult(&response).
-		Get(domainListEndpoint)
-
+	resp, err := c.Do("GET", domainListEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get domain list: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var domainResp DomainListResponse
+	if err := json.Unmarshal(resp.Body, &domainResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal domain list response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &domainResp, nil
 }
 
-// GetDomainNSSList returns DNS servers for the specified domain
+// GetDomainNSSList returns list of domain nameservers
 func (c *Client) GetDomainNSSList(domain string) (*DomainNSSListResponse, error) {
-	var response DomainNSSListResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username":      c.username,
-			"password":      c.password,
-			"input_format":  "http",
-			"output_format": outputFormatJSON,
-			"dname":         domain,
-		}).
-		SetResult(&response).
-		Get(domainNSSListEndpoint)
-
+	resp, err := c.Do("GET", domainNSSListEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get domain NSS list: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var nssResp DomainNSSListResponse
+	if err := json.Unmarshal(resp.Body, &nssResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal domain NSS list response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &nssResp, nil
 }
 
-// GetProfileData returns profile information
+// GetProfileData returns profile data
 func (c *Client) GetProfileData() (*ProfileResponse, error) {
-	var response ProfileResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-		}).
-		SetResult(&response).
-		Get(profileDataEndpoint)
-
+	resp, err := c.Do("GET", profileDataEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get profile data: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var profileResp ProfileResponse
+	if err := json.Unmarshal(resp.Body, &profileResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal profile data response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &profileResp, nil
 }
 
-// GetProductList returns list of products/services
+// GetProductList returns list of products
 func (c *Client) GetProductList() (*ProductListResponse, error) {
-	var response ProductListResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-		}).
-		SetResult(&response).
-		Get(productListEndpoint)
-
+	resp, err := c.Do("GET", productListEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get product list: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var productResp ProductListResponse
+	if err := json.Unmarshal(resp.Body, &productResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal product list response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &productResp, nil
 }
 
-// GetProductDetails returns details of a specific product/service
+// GetProductDetails returns product details
 func (c *Client) GetProductDetails(productID string) (*ProductListResponse, error) {
-	var response ProductListResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username":  c.username,
-			"password":  c.password,
-			"productId": productID,
-		}).
-		SetResult(&response).
-		Get(productDetailsEndpoint)
-
+	resp, err := c.Do("GET", productDetailsEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get product details: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var productResp ProductListResponse
+	if err := json.Unmarshal(resp.Body, &productResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal product details response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &productResp, nil
 }
 
 // GetNSS returns DNS servers for the specified domain
 func (c *Client) GetNSS(domain string) (*NSSResponse, error) {
-	var response NSSResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-			"domain":   domain,
-		}).
-		SetResult(&response).
-		Get(nssGetEndpoint)
-
+	resp, err := c.Do("GET", nssGetEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get NSS: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var nssResp NSSResponse
+	if err := json.Unmarshal(resp.Body, &nssResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal NSS response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &nssResp, nil
 }
 
 // GetContactWhois returns contact information by handle
 func (c *Client) GetContactWhois(handle string) (*ContactWhoisResponse, error) {
-	var response ContactWhoisResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-			"handle":   handle,
-		}).
-		SetResult(&response).
-		Get(contactWhoisEndpoint)
-
+	resp, err := c.Do("GET", contactWhoisEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get contact whois: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var contactResp ContactWhoisResponse
+	if err := json.Unmarshal(resp.Body, &contactResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal contact whois response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &contactResp, nil
 }
 
 // GetTransferPassword returns transfer password for the specified domain
 func (c *Client) GetTransferPassword(domain string) (*PasswordGetResponse, error) {
-	var response PasswordGetResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-			"domain":   domain,
-		}).
-		SetResult(&response).
-		Get(passwordGetEndpoint)
-
+	resp, err := c.Do("GET", passwordGetEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get transfer password: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var passwordResp PasswordGetResponse
+	if err := json.Unmarshal(resp.Body, &passwordResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal password get response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &passwordResp, nil
 }
 
 // GetNSInfo returns information about a nameserver in .kz zone
 func (c *Client) GetNSInfo(host string) (*NSInfoResponse, error) {
-	var response NSInfoResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username": c.username,
-			"password": c.password,
-			"host":     host,
-		}).
-		SetResult(&response).
-		Get(nsInfoEndpoint)
-
+	resp, err := c.Do("GET", nsInfoEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get NS info: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var nsResp NSInfoResponse
+	if err := json.Unmarshal(resp.Body, &nsResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal NS info response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
-
-	return &response, nil
+	return &nsResp, nil
 }
 
-// GetInvoiceDetails returns details of a specific invoice
+// GetInvoiceDetails returns invoice details
 func (c *Client) GetInvoiceDetails(invoiceID string) (*InvoiceDetailsResponse, error) {
-	var response InvoiceDetailsResponse
-
-	resp, err := c.client.R().
-		SetQueryParams(map[string]string{
-			"username":      c.username,
-			"password":      c.password,
-			"input_format":  "http",
-			"output_format": outputFormatJSON,
-			"invoiceId":     invoiceID,
-		}).
-		SetResult(&response).
-		Get(invoiceDetailsEndpoint)
-
+	resp, err := c.Do("GET", invoiceDetailsEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get invoice details: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	var invoiceResp InvoiceDetailsResponse
+	if err := json.Unmarshal(resp.Body, &invoiceResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal invoice details response: %w", err)
 	}
 
-	if response.Result != "success" {
-		return nil, fmt.Errorf("API error: %s", response.Result)
-	}
+	return &invoiceResp, nil
+}
 
-	return &response, nil
+// GetUsername returns the username used for authentication
+func (c *Client) GetUsername() string {
+	return c.username
 }

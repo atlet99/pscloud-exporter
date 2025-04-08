@@ -3,6 +3,7 @@ package collector
 import (
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/atlet99/pscloud-exporter/internal/client"
@@ -12,6 +13,11 @@ import (
 
 type Exporter struct {
 	client *client.Client
+
+	// Scrape metrics
+	scrapeDurationMetric  prometheus.Gauge
+	scrapeSuccessMetric   prometheus.Gauge
+	lastScrapeErrorMetric *prometheus.GaugeVec
 
 	// Balance metrics
 	prepayMetric *prometheus.GaugeVec
@@ -31,66 +37,99 @@ type Exporter struct {
 	invoiceItemAmountMetric *prometheus.GaugeVec
 }
 
+// New creates a new Exporter instance
 func New(c *client.Client) *Exporter {
 	return &Exporter{
 		client: c,
 
+		// Scrape metrics
+		scrapeDurationMetric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: "pskz",
+				Name:      "scrape_duration_seconds",
+				Help:      "Duration of the last scrape in seconds",
+			},
+		),
+		scrapeSuccessMetric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: "pskz",
+				Name:      "scrape_success",
+				Help:      "Whether the last scrape was successful (1 for success, 0 for failure)",
+			},
+		),
+		lastScrapeErrorMetric: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "pskz",
+				Name:      "last_scrape_error",
+				Help:      "Error status of last scrape attempt (1 if error occurred, with error type label)",
+			},
+			[]string{"error_type"},
+		),
+
 		// Balance metrics
 		prepayMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_prepay_balance",
-				Help: "Current prepay balance",
+				Namespace: "pskz",
+				Name:      "prepay_balance",
+				Help:      "Current prepay balance",
 			},
-			[]string{},
+			[]string{"username"},
 		),
 		creditMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_credit_balance",
-				Help: "Current credit balance",
+				Namespace: "pskz",
+				Name:      "credit_balance",
+				Help:      "Current credit balance",
 			},
-			[]string{},
+			[]string{"username"},
 		),
 		debtMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_debt_balance",
-				Help: "Current debt balance",
+				Namespace: "pskz",
+				Name:      "debt_balance",
+				Help:      "Current debt balance",
 			},
-			[]string{},
+			[]string{"username"},
 		),
 
 		// Domain metrics
 		domainExpiryMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_domain_expiry_days",
-				Help: "Days until domain expiry",
+				Namespace: "pskz",
+				Name:      "domain_expiry_days",
+				Help:      "Days until domain expiry",
 			},
 			[]string{"domain"},
 		),
 		domainStatusMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_domain_status",
-				Help: "Domain status (1 = active, 0 = inactive)",
+				Namespace: "pskz",
+				Name:      "domain_status",
+				Help:      "Domain status (1 = active, 0 = inactive)",
 			},
 			[]string{"domain", "status"},
 		),
 		domainPriceMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_domain_price",
-				Help: "Domain prices",
+				Namespace: "pskz",
+				Name:      "domain_price",
+				Help:      "Domain prices",
 			},
 			[]string{"operation", "zone"},
 		),
 		nsStatusMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_ns_status",
-				Help: "Nameserver status (1 = active, 0 = inactive)",
+				Namespace: "pskz",
+				Name:      "ns_status",
+				Help:      "Nameserver status (1 = active, 0 = inactive)",
 			},
 			[]string{"host", "status"},
 		),
 		nsIPCountMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_ns_ip_count",
-				Help: "Number of IPs associated with nameserver",
+				Namespace: "pskz",
+				Name:      "ns_ip_count",
+				Help:      "Number of IPs associated with nameserver",
 			},
 			[]string{"host"},
 		),
@@ -98,29 +137,36 @@ func New(c *client.Client) *Exporter {
 		// Invoice metrics
 		invoiceTotalMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_invoice_total",
-				Help: "Total amount of the invoice",
+				Namespace: "pskz",
+				Name:      "invoice_total",
+				Help:      "Total amount of the invoice",
 			},
 			[]string{"invoice_id", "status", "payment_method"},
 		),
 		invoiceStatusMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_invoice_status",
-				Help: "Invoice status (1 = paid, 0 = unpaid)",
+				Namespace: "pskz",
+				Name:      "invoice_status",
+				Help:      "Invoice status (1 = paid, 0 = unpaid)",
 			},
 			[]string{"invoice_id", "status"},
 		),
 		invoiceItemAmountMetric: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "pskz_invoice_item_amount",
-				Help: "Amount of each item in the invoice",
+				Namespace: "pskz",
+				Name:      "invoice_item_amount",
+				Help:      "Amount of each item in the invoice",
 			},
 			[]string{"invoice_id", "description"},
 		),
 	}
 }
 
+// Describe implements prometheus.Collector
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
+	e.scrapeDurationMetric.Describe(ch)
+	e.scrapeSuccessMetric.Describe(ch)
+	e.lastScrapeErrorMetric.Describe(ch)
 	e.prepayMetric.Describe(ch)
 	e.creditMetric.Describe(ch)
 	e.debtMetric.Describe(ch)
@@ -134,31 +180,67 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	e.invoiceItemAmountMetric.Describe(ch)
 }
 
+// Collect implements prometheus.Collector
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	// Collect balance metrics
-	if balance, err := e.client.GetBalance(); err == nil {
-		prepay := parseToFloat(balance.Answer.Prepay)
-		credit := parseToFloat(balance.Answer.Credit)
-		debt := parseToFloat(balance.Answer.CreditInfo.Debt)
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start).Seconds()
+		e.scrapeDurationMetric.Set(duration)
+		e.scrapeDurationMetric.Collect(ch)
+		e.scrapeSuccessMetric.Collect(ch)
+		e.lastScrapeErrorMetric.Collect(ch)
+	}()
 
-		e.prepayMetric.WithLabelValues().Set(prepay)
-		e.creditMetric.WithLabelValues().Set(credit)
-		e.debtMetric.WithLabelValues().Set(debt)
+	// Reset all metrics
+	e.lastScrapeErrorMetric.Reset()
+	e.prepayMetric.Reset()
+	e.creditMetric.Reset()
+	e.debtMetric.Reset()
+	e.domainExpiryMetric.Reset()
+	e.domainStatusMetric.Reset()
+	e.domainPriceMetric.Reset()
+	e.nsStatusMetric.Reset()
+	e.nsIPCountMetric.Reset()
+	e.invoiceTotalMetric.Reset()
+	e.invoiceStatusMetric.Reset()
+	e.invoiceItemAmountMetric.Reset()
 
-		e.prepayMetric.Collect(ch)
-		e.creditMetric.Collect(ch)
-		e.debtMetric.Collect(ch)
+	balance, err := e.client.GetBalance()
+	if err != nil {
+		log.Printf("Error getting balance: %v", err)
+		e.scrapeSuccessMetric.Set(0)
+
+		if strings.Contains(err.Error(), "authentication failed") {
+			e.lastScrapeErrorMetric.WithLabelValues("authentication_error").Set(1)
+			// Set balance metrics to -1 on authentication error
+			e.prepayMetric.WithLabelValues(e.client.GetUsername()).Set(-1)
+			e.creditMetric.WithLabelValues(e.client.GetUsername()).Set(-1)
+			e.debtMetric.WithLabelValues(e.client.GetUsername()).Set(-1)
+		} else {
+			e.lastScrapeErrorMetric.WithLabelValues("balance_fetch_error").Set(1)
+		}
+		return
 	}
+
+	e.scrapeSuccessMetric.Set(1)
+	e.prepayMetric.WithLabelValues(e.client.GetUsername()).Set(parseToFloat(balance.Answer.Prepay))
+	e.creditMetric.WithLabelValues(e.client.GetUsername()).Set(parseToFloat(balance.Answer.Credit))
+	e.debtMetric.WithLabelValues(e.client.GetUsername()).Set(parseToFloat(balance.Answer.CreditInfo.Debt))
 
 	// Try to get domain list using client API first
 	domains, err := e.client.GetClientDomainList()
 	if err != nil {
 		log.Printf("Error getting client domain list: %v, trying domain API", err)
 		// If client API fails, try domain API
-		domains, err = e.client.GetDomainList()
+		domainListResp, err := e.client.GetDomainList()
 		if err != nil {
 			log.Printf("Error getting domain list: %v", err)
 			return
+		}
+		// Convert DomainListResponse to ClientDomainListResponse
+		domains = &client.ClientDomainListResponse{
+			Result: domainListResp.Result,
+			Answer: domainListResp.Answer,
 		}
 	}
 
@@ -195,9 +277,8 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 			if nsInfo.Answer.Status == "active" {
 				nsStatus = 1.0
 			}
-
-			e.nsStatusMetric.WithLabelValues(nsInfo.Answer.Host, nsInfo.Answer.Status).Set(nsStatus)
-			e.nsIPCountMetric.WithLabelValues(nsInfo.Answer.Host).Set(float64(len(nsInfo.Answer.IPs)))
+			e.nsStatusMetric.WithLabelValues(ns, nsInfo.Answer.Status).Set(nsStatus)
+			e.nsIPCountMetric.WithLabelValues(ns).Set(float64(len(nsInfo.Answer.IPs)))
 		}
 	}
 
@@ -253,6 +334,10 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
+	// Collect all metrics
+	e.prepayMetric.Collect(ch)
+	e.creditMetric.Collect(ch)
+	e.debtMetric.Collect(ch)
 	e.domainExpiryMetric.Collect(ch)
 	e.domainStatusMetric.Collect(ch)
 	e.domainPriceMetric.Collect(ch)
@@ -263,6 +348,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.invoiceItemAmountMetric.Collect(ch)
 }
 
+// parseToFloat converts string value to float64
 func parseToFloat(val string) float64 {
 	f, _ := strconv.ParseFloat(val, 64)
 	return f

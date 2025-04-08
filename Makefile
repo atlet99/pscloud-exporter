@@ -6,6 +6,8 @@ TAG_NAME ?= $(shell head -n 1 .release-version 2>/dev/null || echo "v0.0.0")
 VERSION_RAW ?= $(shell tail -n 1 .release-version 2>/dev/null || echo "dev")
 VERSION ?= $(VERSION_RAW)
 GO_FILES := $(wildcard $(CMD_DIR)/*.go)
+GOLANGCI_LINT_VERSION := v1.57.2
+GOLANGCI_LINT_PATH := $(shell go env GOPATH)/bin/golangci-lint
 
 # Ensure the output directory exists
 $(OUTPUT_DIR):
@@ -27,12 +29,35 @@ install-deps:
 	@echo "Installing dependencies..."
 	go mod tidy
 	go mod vendor
+	@echo "Installing golangci-lint..."
+	@if ! command -v $(GOLANGCI_LINT_PATH) > /dev/null; then \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin $(GOLANGCI_LINT_VERSION); \
+		echo "golangci-lint installed successfully"; \
+	else \
+		echo "golangci-lint is already installed"; \
+	fi
 
 # Clean up vendor
 .PHONY: clean-deps
 clean-deps:
 	@echo "Cleaning up vendor dependencies..."
 	rm -rf vendor
+
+# Update dependencies to latest versions
+.PHONY: update-deps update-deps-major
+
+update-deps:
+	@echo "Updating dependencies to latest minor/patch versions..."
+	go get -u ./...
+	go mod tidy
+	@echo "Don't forget to run 'make test' to verify the updates"
+
+update-deps-major:
+	@echo "Updating dependencies to latest major versions (may include breaking changes)..."
+	go get -u -t ./...
+	go mod tidy
+	@echo "WARNING: Major version updates may include breaking changes!"
+	@echo "Please run 'make test' to verify the updates"
 
 # Build binary for current OS/Arch
 .PHONY: build
@@ -82,43 +107,51 @@ vet:
 	@echo "Running go vet..."
 	go vet ./...
 
-# Code formatting
+# Run go fmt
 .PHONY: fmt
 fmt:
 	@echo "Running go fmt..."
 	go fmt ./...
 
-# Install and run golangci-lint
-.PHONY: install-lint lint lint-fix
-
-install-lint:
-	@echo "Installing golangci-lint..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
+# Run golangci-lint
+.PHONY: lint
 lint:
 	@echo "Running linter..."
-	@golangci-lint run
+	@if ! command -v $(GOLANGCI_LINT_PATH) > /dev/null; then \
+		echo "golangci-lint is not installed. Running 'make install-deps' to install it..."; \
+		make install-deps; \
+	fi
+	$(GOLANGCI_LINT_PATH) run
 
-lint-fix:
-	@echo "Running linter with auto-fix..."
-	@golangci-lint run --fix
+# Run all checks
+.PHONY: check
+check: fmt vet lint test
 
-# Help
+# Create release
+.PHONY: release
+release: check build-cross
+	@echo "Creating release $(TAG_NAME)..."
+	@echo "Release $(TAG_NAME) created successfully"
+
+# Help target
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  default        - fmt + vet + lint + build + quicktest"
-	@echo "  run            - Run the application"
-	@echo "  install-deps   - Tidy and vendor go modules"
-	@echo "  clean-deps     - Clean up vendor dependencies"
-	@echo "  build          - Build the binary"
-	@echo "  build-cross    - Cross-platform build"
-	@echo "  clean          - Remove binaries"
-	@echo "  test           - Run tests with race & coverage"
-	@echo "  test-coverage  - Generate HTML coverage report"
-	@echo "  quicktest      - Run quick tests"
-	@echo "  fmt            - Format Go code"
-	@echo "  vet            - Run go vet"
-	@echo "  lint           - Run golangci-lint"
-	@echo "  lint-fix       - Run golangci-lint with auto-fix"
-	@echo "  help           - Show this help"
+	@echo "  default         - Run fmt, vet, lint, build, and quicktest"
+	@echo "  run             - Run the application locally"
+	@echo "  install-deps    - Install project dependencies"
+	@echo "  clean-deps      - Clean up vendor dependencies"
+	@echo "  update-deps     - Update dependencies to latest minor/patch versions"
+	@echo "  update-deps-major - Update dependencies to latest major versions"
+	@echo "  build           - Build binary for current OS/Arch"
+	@echo "  build-cross     - Build binaries for multiple platforms"
+	@echo "  clean           - Clean build artifacts"
+	@echo "  test            - Run all tests with race detection and coverage"
+	@echo "  quicktest       - Run quick tests"
+	@echo "  test-coverage   - Generate coverage report"
+	@echo "  vet             - Run go vet"
+	@echo "  fmt             - Run go fmt"
+	@echo "  lint            - Run golangci-lint"
+	@echo "  check           - Run all checks (fmt, vet, lint, test)"
+	@echo "  release         - Create release"
+	@echo "  help            - Show this help message"

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pscloud-exporter
+  namespace: monitoring
+  labels:
+    app: pscloud-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pscloud-exporter
+  template:
+    metadata:
+      labels:
+        app: pscloud-exporter
+    spec:
+      containers:
+      - name: pscloud-exporter
+        image: zetfolder17/pscloud-exporter:latest
+        imagePullPolicy: Always
+        args:
+        - "-config=/etc/pscloud-exporter/config.yaml"
+        ports:
+        - containerPort: 9116
+          name: metrics
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/pscloud-exporter
+        envFrom:
+        - secretRef:
+            name: pscloud-exporter-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config-volume
+        configMap:
+          name: pscloud-exporter-config 
