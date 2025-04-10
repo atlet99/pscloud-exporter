@@ -21,6 +21,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Get all history for tags and branches
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -55,6 +57,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Get all history for tags and branches
 
       - name: Read .release-version for Version variable
         id: version_file
@@ -84,7 +88,8 @@ jobs:
         id: last_commits
         run: |
           printf "Changelogs:\n" > last_commits.txt
-          git log -4 --pretty=format:"- %s (%h)" >> last_commits.txt
+          git fetch --prune --unshallow || git fetch --depth=100
+          git log -6 --pretty=format:"- %s (%h)" >> last_commits.txt
 
       - name: Build Linux binary
         run: |
