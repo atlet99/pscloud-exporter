@@ -9,11 +9,10 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Username string    `yaml:"username" env:"PSCLOUD_USERNAME"`
-	Password string    `yaml:"password" env:"PSCLOUD_PASSWORD"`
-	BaseURL  string    `yaml:"baseUrl" env:"PSCLOUD_BASE_URL"`
-	UseHTTP  bool      `yaml:"useHttp" env:"PSCLOUD_USE_HTTP"`
-	Web      WebConfig `yaml:"web"`
+	Token     string    `yaml:"token" env:"PSCLOUD_TOKEN"`
+	ServiceID string    `yaml:"serviceId" env:"PSCLOUD_SERVICE_ID"`
+	BaseURL   string    `yaml:"baseUrl" env:"PSCLOUD_BASE_URL"`
+	Web       WebConfig `yaml:"web"`
 }
 
 // WebConfig represents the web server configuration
@@ -26,7 +25,7 @@ type WebConfig struct {
 // LoadConfig loads the configuration from a YAML file and environment variables
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{
-		BaseURL: "https://api.ps.kz/v1",
+		BaseURL: "https://console.ps.kz",
 		Web: WebConfig{
 			ListenAddress: ":9116",
 			MetricsPrefix: "pskz",
@@ -57,10 +56,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// Override with environment variables
-	config.Username = getEnvOrDefault("PSCLOUD_USERNAME", config.Username)
-	config.Password = getEnvOrDefault("PSCLOUD_PASSWORD", config.Password)
+	config.Token = getEnvOrDefault("PSCLOUD_TOKEN", config.Token)
+	config.ServiceID = getEnvOrDefault("PSCLOUD_SERVICE_ID", config.ServiceID)
 	config.BaseURL = getEnvOrDefault("PSCLOUD_BASE_URL", config.BaseURL)
-	config.UseHTTP = getBoolEnv("PSCLOUD_USE_HTTP", config.UseHTTP)
 
 	// Web configuration
 	config.Web.ListenAddress = getEnvOrDefault("WEB_LISTEN_ADDRESS", config.Web.ListenAddress)
@@ -76,12 +74,4 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-func getBoolEnv(key string, defaultValue bool) bool {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value == "true" || value == "1" || value == "yes"
 }

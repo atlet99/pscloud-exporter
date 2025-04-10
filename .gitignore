@@ -37,9 +37,6 @@ go.work
 .env.local
 .env.*.local
 
-# Binary files
-pscloud-exporter
-
 # Build output
 dist/
 build/
