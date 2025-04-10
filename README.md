@@ -1,6 +1,10 @@
 # PSCloud Exporter
 
+![Go version](https://img.shields.io/github/go-mod/go-version/atlet99/pscloud-exporter/main?style=flat&label=go-version) [![Docker Image Version](https://img.shields.io/docker/v/zetfolder17/pscloud-exporter?label=docker%20image&sort=semver)](https://hub.docker.com/r/zetfolder17/pscloud-exporter) ![Docker Image Size](https://img.shields.io/docker/image-size/zetfolder17/pscloud-exporter/latest) [![CI](https://github.com/atlet99/pscloud-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/atlet99/pscloud-exporter/actions/workflows/ci.yml) [![GitHub contributors](https://img.shields.io/github/contributors/atlet99/pscloud-exporter)](https://github.com/atlet99/pscloud-exporter/graphs/contributors/) [![Go Report Card](https://goreportcard.com/badge/github.com/atlet99/pscloud-exporter)](https://goreportcard.com/report/github.com/atlet99/pscloud-exporter) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/atlet99/pscloud-exporter/badge)](https://securityscorecards.dev/viewer/?uri=github.com/atlet99/pscloud-exporter) ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/atlet99/pscloud-exporter?sort=semver)
+
 A Prometheus exporter for PS.KZ (PSCloud) services that collects metrics about your account balance, domains, and server resources via GraphQL API.
+
+Repository: [github.com/atlet99/pscloud-exporter](https://github.com/atlet99/pscloud-exporter)
 
 ## Features
 
@@ -34,6 +38,13 @@ make build
 ```bash
 docker pull zetfolder17/pscloud-exporter:latest
 ```
+
+### Prebuilt Binaries
+
+Each release contains prebuilt binaries for:
+- Linux (pscloud-exporter.linux)
+- macOS (pscloud-exporter.darwin)
+- Windows (pscloud-exporter.exe)
 
 ## Configuration
 
@@ -81,10 +92,10 @@ export PSCLOUD_TOKEN="your_access_token"
 For Docker:
 ```bash
 # Using PS_ACCOUNT_TOKEN
-docker run -e PS_ACCOUNT_TOKEN="your_access_token" -p 9116:9116 atlet99/pscloud-exporter
+docker run -e PS_ACCOUNT_TOKEN="your_access_token" -p 9116:9116 zetfolder17/pscloud-exporter
 
 # Alternative using PSCLOUD_TOKEN
-docker run -e PSCLOUD_TOKEN="your_access_token" -p 9116:9116 atlet99/pscloud-exporter
+docker run -e PSCLOUD_TOKEN="your_access_token" -p 9116:9116 zetfolder17/pscloud-exporter
 ```
 
 ### 2. Using configuration file
@@ -267,46 +278,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a list of changes.
-
-## Alternative Configuration Instructions
-
-The exporter is configured using a YAML configuration file. By default, the exporter looks for a configuration file at `/etc/pscloud-exporter/config.yml`.
-
-### Configuration Example
-
-```yaml
-listen: ":9116"
-token: "your-api-token" # deprecated method (using environment variables is recommended)
-account_id: "your-account-id" # deprecated method (using environment variables is recommended)
-metric_prefix: "pscloud_"
-```
-
-### Environment Variables
-
-Instead of specifying authentication data in the configuration file, it is recommended to use environment variables:
-
-- `PS_ACCOUNT_TOKEN` - PS.KZ API token (preferred method)
-- `PSCLOUD_TOKEN` - alternative PS.KZ API token (can be used instead of PS_ACCOUNT_TOKEN)
-- `PSCLOUD_SERVICE_ID` - Service ID for VPC and VPS API requests (optional)
-- `PSCLOUD_BASE_URL` - Base URL for PS.KZ API (optional, default: https://console.ps.kz)
-
-## Running
-
-```bash
-# Run with a specific configuration file path
-pscloud-exporter -config /path/to/config.yml
-
-# Run using environment variables
-export PS_ACCOUNT_TOKEN="your-api-token"
-pscloud-exporter
-```
-
-## Docker
-
-```bash
-# Run using Docker
-docker run -p 9116:9116 -e PS_ACCOUNT_TOKEN="your-api-token" pscloud/exporter
-
-# or using PSCLOUD_TOKEN
-docker run -p 9116:9116 -e PSCLOUD_TOKEN="your-api-token" pscloud/exporter
-```
