@@ -1,8 +1,10 @@
 # PSCloud Exporter
 
-![Go version](https://img.shields.io/github/go-mod/go-version/atlet99/pscloud-exporter/main?style=flat&label=go-version) [![Docker Image Version](https://img.shields.io/docker/v/zetfolder17/pscloud-exporter?label=docker%20image&sort=semver)](https://hub.docker.com/r/zetfolder17/pscloud-exporter) ![Docker Image Size](https://img.shields.io/docker/image-size/zetfolder17/pscloud-exporter/latest) [![CI](https://github.com/atlet99/pscloud-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/atlet99/pscloud-exporter/actions/workflows/ci.yml) [![GitHub contributors](https://img.shields.io/github/contributors/atlet99/pscloud-exporter)](https://github.com/atlet99/pscloud-exporter/graphs/contributors/) [![Go Report Card](https://goreportcard.com/badge/github.com/atlet99/pscloud-exporter)](https://goreportcard.com/report/github.com/atlet99/pscloud-exporter) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/atlet99/pscloud-exporter/badge)](https://securityscorecards.dev/viewer/?uri=github.com/atlet99/pscloud-exporter) ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/atlet99/pscloud-exporter?sort=semver)
+![Go version](https://img.shields.io/github/go-mod/go-version/atlet99/pscloud-exporter/main?style=flat&label=go-version) [![Docker Image Version](https://img.shields.io/docker/v/zetfolder17/pscloud-exporter?label=docker%20image&sort=semver)](https://hub.docker.com/r/zetfolder17/pscloud-exporter) ![Docker Image Size](https://img.shields.io/docker/image-size/zetfolder17/pscloud-exporter/latest) [![CI](https://github.com/atlet99/pscloud-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/atlet99/pscloud-exporter/actions/workflows/ci.yml) [![GitHub contributors](https://img.shields.io/github/contributors/atlet99/pscloud-exporter)](https://github.com/atlet99/pscloud-exporter/graphs/contributors/) [![Go Report Card](https://goreportcard.com/badge/github.com/atlet99/pscloud-exporter)](https://goreportcard.com/report/github.com/atlet99/pscloud-exporter) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/atlet99/pscloud-exporter/badge)](https://securityscorecards.dev/viewer/?uri=github.com/atlet99/pscloud-exporter) ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/atlet99/pscloud-exporter?sort=semver) [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/atlet99/pscloud-exporter/graphs/commit-activity) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![CodeQL](https://github.com/atlet99/pscloud-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/atlet99/pscloud-exporter/actions/workflows/codeql.yml)
 
 A Prometheus exporter for PS.KZ (PSCloud) services that collects metrics about your account balance, domains, and server resources via GraphQL API.
+
+> **Project Status:** 🟢 Active Development - This project is actively maintained and receives regular updates. It follows best practices for security and code quality, including CodeQL scans, dependency reviews, and automated testing.
 
 Repository: [github.com/atlet99/pscloud-exporter](https://github.com/atlet99/pscloud-exporter)
 
@@ -259,11 +261,31 @@ make docker-build
 
 ## Contributing
 
+We welcome contributions from the community! This project follows standard GitHub flow:
+
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+### Development Guidelines
+
+- Follow Go best practices and idiomatic code style
+- Add tests for new features
+- Ensure all tests pass before submitting a PR
+- Update documentation as needed
+- Maintain backward compatibility
+
+### Project Maintainers
+
+This project is maintained by:
+
+- [@atlet99](https://github.com/atlet99) - Original author and maintainer
+
+### Code of Conduct
+
+We expect all participants to adhere to a respectful and inclusive environment. Be kind to others and focus on constructive feedback.
 
 ## License
 

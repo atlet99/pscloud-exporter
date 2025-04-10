@@ -6,13 +6,15 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build:
     name: Build and Push Docker Image
     runs-on: ubuntu-20.04
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf # v2.11.1
@@ -54,6 +56,8 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-20.04
     needs: build
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
