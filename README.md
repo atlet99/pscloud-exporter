@@ -37,12 +37,12 @@ docker pull zetfolder17/pscloud-exporter:latest
 
 ## Configuration
 
-Create a configuration file (`config.yml` or `config.yaml`) with your PS.KZ API token:
+The configuration file `config.yml` supports the following options:
 
 ```yaml
 # PSCloud Exporter Configuration
-token: "your_token"  # Access token for PS.KZ application
-serviceId: "12345"   # Service ID for VPC and VPS API requests (optional)
+token: ""  # Can be left empty and set via PSCLOUD_TOKEN environment variable
+serviceId: ""  # Service ID for VPC and VPS API requests (optional)
 baseUrl: "https://console.ps.kz"  # Base URL for PS.KZ API (optional)
 
 # Web server configuration
@@ -52,13 +52,66 @@ web:
   telemetryPath: "/metrics"
 ```
 
-### Obtaining a Token
+## Authentication
 
-1. Log in to your PS.KZ account at https://console.ps.kz
-2. Navigate to Account Settings
-3. Go to "API Integration" or "API Tokens" section
-4. Create a new token with appropriate permissions
-5. Copy the token and paste it into your configuration file
+PSCloud Exporter uses a PS.KZ API token to retrieve metrics. To obtain a token:
+
+1. Log in to your [PS.KZ Console](https://console.ps.kz)
+2. Navigate to "Account Settings"
+3. Go to the "API Integration" section
+4. Create a new access token with the "Engineer" role
+5. Copy the generated token
+
+You can provide the token to the exporter in one of the following ways:
+
+### 1. Using environment variables (recommended)
+
+You can use either `PS_ACCOUNT_TOKEN` (preferred) or `PSCLOUD_TOKEN`:
+
+```bash
+# Using PS_ACCOUNT_TOKEN
+export PS_ACCOUNT_TOKEN="your_access_token"
+./bin/pscloud-exporter
+
+# Alternative using PSCLOUD_TOKEN
+export PSCLOUD_TOKEN="your_access_token"
+./bin/pscloud-exporter
+```
+
+For Docker:
+```bash
+# Using PS_ACCOUNT_TOKEN
+docker run -e PS_ACCOUNT_TOKEN="your_access_token" -p 9116:9116 atlet99/pscloud-exporter
+
+# Alternative using PSCLOUD_TOKEN
+docker run -e PSCLOUD_TOKEN="your_access_token" -p 9116:9116 atlet99/pscloud-exporter
+```
+
+### 2. Using configuration file
+
+In the `config.yml` file:
+```yaml
+token: "your_access_token"
+```
+
+### 3. Using command line flag
+
+```bash
+./bin/pscloud-exporter -token="your_access_token"
+```
+
+## Verifying Configuration
+
+To verify that your token works correctly, you can use the following command:
+
+```bash
+curl -X POST https://console.ps.kz/account/graphql \
+  -H "Content-Type: application/json" \
+  -H "X-User-Token: $PSCLOUD_TOKEN" \
+  -d '{"query": "query { account { current { info { balance } } } }"}'
+```
+
+If the token is valid, you should receive a response with your account balance.
 
 ## Usage
 
@@ -188,3 +241,46 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a list of changes.
+
+## Alternative Configuration Instructions
+
+The exporter is configured using a YAML configuration file. By default, the exporter looks for a configuration file at `/etc/pscloud-exporter/config.yml`.
+
+### Configuration Example
+
+```yaml
+listen: ":9116"
+token: "your-api-token" # deprecated method (using environment variables is recommended)
+account_id: "your-account-id" # deprecated method (using environment variables is recommended)
+metric_prefix: "pscloud_"
+```
+
+### Environment Variables
+
+Instead of specifying authentication data in the configuration file, it is recommended to use environment variables:
+
+- `PS_ACCOUNT_TOKEN` - PS.KZ API token (preferred method)
+- `PSCLOUD_TOKEN` - alternative PS.KZ API token (can be used instead of PS_ACCOUNT_TOKEN)
+- `PSCLOUD_SERVICE_ID` - Service ID for VPC and VPS API requests (optional)
+- `PSCLOUD_BASE_URL` - Base URL for PS.KZ API (optional, default: https://console.ps.kz)
+
+## Running
+
+```bash
+# Run with a specific configuration file path
+pscloud-exporter -config /path/to/config.yml
+
+# Run using environment variables
+export PS_ACCOUNT_TOKEN="your-api-token"
+pscloud-exporter
+```
+
+## Docker
+
+```bash
+# Run using Docker
+docker run -p 9116:9116 -e PS_ACCOUNT_TOKEN="your-api-token" pscloud/exporter
+
+# or using PSCLOUD_TOKEN
+docker run -p 9116:9116 -e PSCLOUD_TOKEN="your-api-token" pscloud/exporter
+```

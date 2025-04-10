@@ -1,6 +1,8 @@
 # PSCloud Exporter Configuration
-token: "your_token"  # Access token for PS.KZ application
-serviceId: "12345"   # Service ID for VPC and VPS API requests (optional)
+# Token can be left empty here and set via PSCLOUD_TOKEN environment variable
+token: ""  # Can be left empty and set via PSCLOUD_TOKEN environment variable
+serviceId: ""  # Service ID for VPC and VPS API requests (optional)
+baseUrl: "https://console.ps.kz"  # Base URL for PS.KZ API (optional)
 
 # Web server configuration
 web:
