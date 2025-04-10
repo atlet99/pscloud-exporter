@@ -43,7 +43,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git add .release-version
           git commit -m "Update .release-version with version and build ID"
-          git push origin HEAD:main
+          git push origin HEAD:main --force
 
       - name: Create and push new tag
         run: |
