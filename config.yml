@@ -1,8 +1,6 @@
 # PSCloud Exporter Configuration
-username: "your_username"
-password: "your_password"
-baseUrl: "https://api.ps.kz/v1"
-useHttp: false
+token: "your_token"  # Access token for PS.KZ application
+serviceId: "12345"   # Service ID for VPC and VPS API requests (optional)
 
 # Web server configuration
 web:
