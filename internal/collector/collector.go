@@ -886,32 +886,32 @@ func (e *Exporter) processDomainCounters(domainCountersData map[string]interface
 		return
 	}
 
-	counters, ok := account["counters"].(map[string]interface{})
-	if !ok {
-		log.Printf("Invalid data structure for domain counters: counters field missing")
-		return
-	}
-
-	domains, ok := counters["domains"].(map[string]interface{})
+	domains, ok := account["domains"].(map[string]interface{})
 	if !ok {
 		log.Printf("Invalid data structure for domain counters: domains field missing")
 		return
 	}
 
+	stats, ok := domains["stats"].(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for domain counters: stats field missing")
+		return
+	}
+
 	// Set domain counter metrics
-	if total, ok := domains["total"].(float64); ok {
+	if total, ok := stats["total"].(float64); ok {
 		e.domainCountersMetric.WithLabelValues("total").Set(total)
 	}
 
-	if active, ok := domains["active"].(float64); ok {
+	if active, ok := stats["active"].(float64); ok {
 		e.domainCountersMetric.WithLabelValues("active").Set(active)
 	}
 
-	if expired, ok := domains["expired"].(float64); ok {
+	if expired, ok := stats["expired"].(float64); ok {
 		e.domainCountersMetric.WithLabelValues("expired").Set(expired)
 	}
 
-	if pending, ok := domains["pending"].(float64); ok {
+	if pending, ok := stats["pending"].(float64); ok {
 		e.domainCountersMetric.WithLabelValues("pending").Set(pending)
 	}
 }
@@ -931,13 +931,13 @@ func (e *Exporter) processProjectsInfo(projectsData map[string]interface{}) {
 		return
 	}
 
-	project, ok := account["project"].(map[string]interface{})
+	services, ok := account["services"].(map[string]interface{})
 	if !ok {
-		log.Printf("Invalid data structure for projects: project field missing")
+		log.Printf("Invalid data structure for projects: services field missing")
 		return
 	}
 
-	pagination, ok := project["pagination"].(map[string]interface{})
+	pagination, ok := services["pagination"].(map[string]interface{})
 	if !ok {
 		log.Printf("Invalid data structure for projects: pagination field missing")
 		return
@@ -973,24 +973,24 @@ func (e *Exporter) processProjectsInfo(projectsData map[string]interface{}) {
 		}
 
 		// Set project metrics
-		if amount, ok := projectItem["amount"].(float64); ok {
-			e.projectAmountMetric.WithLabelValues(projectIdStr).Set(amount)
+		if price, ok := projectItem["price"].(float64); ok {
+			e.projectAmountMetric.WithLabelValues(projectIdStr).Set(price)
 		}
 
-		if diskUsage, ok := projectItem["diskusage"].(float64); ok {
+		if diskUsage, ok := projectItem["diskUsage"].(float64); ok {
 			e.projectDiskUsageMetric.WithLabelValues(projectIdStr).Set(diskUsage)
 		}
 
-		if diskLimit, ok := projectItem["disklimit"].(float64); ok {
+		if diskLimit, ok := projectItem["diskLimit"].(float64); ok {
 			e.projectDiskLimitMetric.WithLabelValues(projectIdStr).Set(diskLimit)
 		}
 
-		if bwUsage, ok := projectItem["bwusage"].(float64); ok {
-			e.projectBwUsageMetric.WithLabelValues(projectIdStr).Set(bwUsage)
+		if bandwidthUsage, ok := projectItem["bandwidthUsage"].(float64); ok {
+			e.projectBwUsageMetric.WithLabelValues(projectIdStr).Set(bandwidthUsage)
 		}
 
-		if bwLimit, ok := projectItem["bwlimit"].(float64); ok {
-			e.projectBwLimitMetric.WithLabelValues(projectIdStr).Set(bwLimit)
+		if bandwidthLimit, ok := projectItem["bandwidthLimit"].(float64); ok {
+			e.projectBwLimitMetric.WithLabelValues(projectIdStr).Set(bandwidthLimit)
 		}
 	}
 }

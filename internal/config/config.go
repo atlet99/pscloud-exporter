@@ -9,7 +9,7 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Token     string    `yaml:"token" env:"PSCLOUD_TOKEN"`
+	Token     string    `yaml:"token" env:"PSCLOUD_TOKEN,PS_ACCOUNT_TOKEN"`
 	ServiceID string    `yaml:"serviceId" env:"PSCLOUD_SERVICE_ID"`
 	BaseURL   string    `yaml:"baseUrl" env:"PSCLOUD_BASE_URL"`
 	Web       WebConfig `yaml:"web"`
@@ -56,7 +56,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// Override with environment variables
-	config.Token = getEnvOrDefault("PSCLOUD_TOKEN", config.Token)
+	config.Token = getEnvToken(config.Token)
 	config.ServiceID = getEnvOrDefault("PSCLOUD_SERVICE_ID", config.ServiceID)
 	config.BaseURL = getEnvOrDefault("PSCLOUD_BASE_URL", config.BaseURL)
 
@@ -66,6 +66,22 @@ func LoadConfig(configPath string) (*Config, error) {
 	config.Web.TelemetryPath = getEnvOrDefault("WEB_TELEMETRY_PATH", config.Web.TelemetryPath)
 
 	return config, nil
+}
+
+// getEnvToken checks for token in environment variables
+// First checks PS_ACCOUNT_TOKEN, then falls back to PSCLOUD_TOKEN
+func getEnvToken(defaultValue string) string {
+	// First check PS_ACCOUNT_TOKEN
+	if value := os.Getenv("PS_ACCOUNT_TOKEN"); value != "" {
+		return value
+	}
+
+	// Then check PSCLOUD_TOKEN
+	if value := os.Getenv("PSCLOUD_TOKEN"); value != "" {
+		return value
+	}
+
+	return defaultValue
 }
 
 // Helper functions

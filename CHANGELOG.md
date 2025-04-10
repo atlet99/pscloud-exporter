@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LBaaS (Load Balancer as a Service) metrics for monitoring load balancers, listeners, pools, and members
 - Authentication validation at startup (can be skipped with -skip-auth-check flag)
 - Better error handling for GraphQL authentication errors
+- Support for the latest PS.KZ API changes
+- Improved error handling for unavailable API endpoints
+- Graceful degradation when domain API is unavailable
 
 ### Changed
 - Updated authentication method to use new PS.KZ API authentication
@@ -24,12 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optimized cloud server information collection
 - Removed unused models directory to simplify code organization
 - Removed DBaaS endpoint as it's not ready for GraphQL integration
+- Adapted authentication to use token-based access instead of user/password
+- Updated GraphQL queries to match the current API schema
+- Converted all remaining Russian comments to English
+- Improved error handling and reporting
+
 
 ### Fixed
 - Authentication issues with the new PS.KZ API
 - Error handling in metric collection
 - Configuration file parsing issues
 - Several linter warnings and code quality issues
+- Authentication issues with the new PS.KZ API
+- API compatibility issues with domain listing and counters
+- Error messages and documentation consistency
 
 ## [0.0.0] - 2024-04-08
 
