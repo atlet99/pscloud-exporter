@@ -3,8 +3,8 @@ BINARY_NAME := pscloud-exporter
 OUTPUT_DIR := bin
 CMD_DIR := cmd/pscloud-exporter
 TAG_NAME ?= $(shell head -n 1 .release-version 2>/dev/null || echo "v0.0.0")
-VERSION_RAW ?= $(shell tail -n 1 .release-version 2>/dev/null || echo "dev")
-VERSION ?= $(VERSION_RAW)
+VERSION ?= $(shell head -n 1 .release-version 2>/dev/null || echo "dev")
+BUILD ?= $(shell if tail -n 1 .release-version 2>/dev/null | grep -q "build"; then tail -n 1 .release-version | sed -E 's/.*\(build ([0-9]+)\).*/\1/'; else echo "unknown"; fi)
 GO_FILES := $(wildcard $(CMD_DIR)/*.go)
 GOLANGCI_LINT_VERSION := v1.57.2
 GOLANGCI_LINT_PATH := $(shell go env GOPATH)/bin/golangci-lint
@@ -62,16 +62,16 @@ update-deps-major:
 # Build binary for current OS/Arch
 .PHONY: build
 build: $(OUTPUT_DIR)
-	@echo "Building $(BINARY_NAME) with version $(VERSION)..."
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME) ./$(CMD_DIR)
+	@echo "Building $(BINARY_NAME) version $(VERSION) build $(BUILD)..."
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.Build=$(BUILD)'" -o $(OUTPUT_DIR)/$(BINARY_NAME) ./$(CMD_DIR)
 
 # Build binaries for multiple platforms
 .PHONY: build-cross
 build-cross: $(OUTPUT_DIR)
 	@echo "Building cross-platform binaries..."
-	GOOS=linux   GOARCH=amd64   go build -ldflags="-X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
-	GOOS=darwin  GOARCH=arm64   go build -ldflags="-X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
-	GOOS=windows GOARCH=amd64   go build -ldflags="-X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
+	GOOS=linux   GOARCH=amd64   go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.Build=$(BUILD)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
+	GOOS=darwin  GOARCH=arm64   go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.Build=$(BUILD)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
+	GOOS=windows GOARCH=amd64   go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.Build=$(BUILD)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "Cross-platform binaries are available in $(OUTPUT_DIR):"
 	@ls -1 $(OUTPUT_DIR)
 

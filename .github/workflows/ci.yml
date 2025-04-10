@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@v2.10.2
+        uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf # v2.11.1
         with:
           egress-policy: audit
 
@@ -61,8 +61,14 @@ jobs:
         run: |
           TAG_NAME=$(head -n 1 .release-version)
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
-          VERSION=$(tail -n 1 .release-version | sed 's/ /-/g')
+          VERSION=$(head -n 1 .release-version)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          if grep -q "build" .release-version; then
+            BUILD=$(tail -n 1 .release-version | sed -E 's/.*\(build ([0-9]+)\).*/\1/')
+          else
+            BUILD="unknown"
+          fi
+          echo "BUILD=$BUILD" >> $GITHUB_ENV
 
       - name: Get Go Version
         run: |
@@ -82,15 +88,15 @@ jobs:
 
       - name: Build Linux binary
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ env.VERSION }}" -o pscloud-exporter.linux ./cmd/pscloud-exporter
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ env.VERSION }} -X main.Build=${{ env.BUILD }}" -o pscloud-exporter.linux ./cmd/pscloud-exporter
 
       - name: Build macOS binary
         run: |
-          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ env.VERSION }}" -o pscloud-exporter.darwin ./cmd/pscloud-exporter
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ env.VERSION }} -X main.Build=${{ env.BUILD }}" -o pscloud-exporter.darwin ./cmd/pscloud-exporter
 
       - name: Build Windows binary
         run: |
-          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ env.VERSION }}" -o pscloud-exporter.exe ./cmd/pscloud-exporter
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ env.VERSION }} -X main.Build=${{ env.BUILD }}" -o pscloud-exporter.exe ./cmd/pscloud-exporter
 
       - name: Upload binaries to GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1

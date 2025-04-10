@@ -21,7 +21,15 @@ import (
 var (
 	// Version information, set during build
 	Version = "dev"
+	// Build information, set during build
+	Build = "unknown"
 )
+
+// displayVersion prints the version information in a formatted way
+func displayVersion() {
+	fmt.Printf("Version: %s\n", Version)
+	fmt.Printf("Build: %s\n", Build)
+}
 
 func findConfigFile(configPath string) (string, error) {
 	// If path is explicitly specified, check its existence
@@ -57,6 +65,7 @@ func validateAuth(c *client.Client) error {
 }
 
 func main() {
+	// Variable declarations
 	var (
 		listenAddress = flag.String("listen-address", ":9116", "Address to listen on for web interface and telemetry.")
 		metricsPath   = flag.String("metrics-path", "/metrics", "Path under which to expose metrics.")
@@ -65,9 +74,16 @@ func main() {
 		serviceID     = flag.String("service-id", "", "PS.KZ service ID for cloud servers")
 		baseURL       = flag.String("base-url", "", "Base URL for PS.KZ API (default: https://console.ps.kz)")
 		skipAuth      = flag.Bool("skip-auth-check", false, "Skip authentication validation on startup")
+		showVersion   = flag.Bool("version", false, "Show version information and exit")
 	)
 
 	flag.Parse()
+
+	// Show version and exit if requested
+	if *showVersion {
+		displayVersion()
+		os.Exit(0)
+	}
 
 	// Find configuration file
 	configPath, err := findConfigFile(*configFile)
@@ -133,6 +149,7 @@ func main() {
 			<h1>PSCloud Exporter</h1>
 			<p><a href="` + *metricsPath + `">Metrics</a></p>
 			<p>Version: ` + Version + `</p>
+			<p>Build: ` + Build + `</p>
 			</body>
 			</html>`))
 		if err != nil {
