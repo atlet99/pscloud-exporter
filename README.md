@@ -141,58 +141,84 @@ docker run -d \
 
 ## Available Metrics
 
-### Account Metrics
-- `pskz_prepay_balance`: Current prepay balance
-- `pskz_credit_balance`: Current credit balance
-- `pskz_debt_balance`: Current debt balance
-- `pskz_bonus_balance`: Current bonus balance
-- `pskz_blocked_balance`: Current blocked balance
+The exporter provides the following metrics:
 
-### Domain Metrics
-- `pskz_domain_expiry_days`: Days until domain expiry
-- `pskz_domain_status`: Domain status (1 = active, 0 = inactive)
-- `pskz_domain_counters`: Domain counters (total, active, expired, pending)
+```
+# Account Metrics
+pskz_prepay_balance{account="default"} <value>                # Current prepay balance
+pskz_credit_balance{account="default"} <value>                # Current credit balance
+pskz_debt_balance{account="default"} <value>                  # Current debt balance
+pskz_bonus_balance{account="default"} <value>                 # Current bonus balance
+pskz_blocked_balance{account="default"} <value>               # Current blocked balance
 
-### Project Metrics
-- `pskz_project_amount`: Project amount
-- `pskz_project_disk_usage_gb`: Project disk usage in GB
-- `pskz_project_disk_limit_gb`: Project disk limit in GB
-- `pskz_project_bw_usage_gb`: Project bandwidth usage in GB
-- `pskz_project_bw_limit_gb`: Project bandwidth limit in GB
+# Domain Metrics
+pskz_domain_expiry_days{domain="example.com"} <value>         # Days until domain expiry
+pskz_domain_status{domain="example.com",status="active"} <value>  # Domain status (1 = active, 0 = inactive)
+pskz_domain_counters{domain="total"} <value>                  # Domain counter for total domains
+pskz_domain_counters{domain="active"} <value>                 # Domain counter for active domains
+pskz_domain_counters{domain="expired"} <value>                # Domain counter for expired domains
+pskz_domain_counters{domain="pending"} <value>                # Domain counter for pending domains
 
-### Server Metrics
-- `pskz_server_ram_mb`: Server RAM in MB
-- `pskz_server_cores`: Server CPU cores
-- `pskz_server_status`: Server status (1 = active, 0 = inactive)
-- `pskz_server_ip_count`: Number of IPs associated with server
+# VPS and Cloud Server Metrics
+pskz_server_status{id="server-id",name="server-name",status="active"} <value>  # Server status (1 = active)
+pskz_server_ram_mb{id="server-id",name="server-name"} <value>  # Server RAM in MB
+pskz_server_cores{id="server-id",name="server-name"} <value>   # Server CPU cores
+pskz_server_ip_count{id="server-id",name="server-name"} <value> # Number of IPs associated with server
 
-### Kubernetes Metrics
-- `pskz_k8s_cluster_count`: Number of Kubernetes clusters by status
-- `pskz_k8s_cluster_status`: Kubernetes cluster status (1 = active, 0 = inactive)
-- `pskz_k8s_cluster_nodes`: Number of worker nodes in Kubernetes cluster
-- `pskz_k8s_cluster_masters`: Number of master nodes in Kubernetes cluster
-- `pskz_k8s_nodegroup_status`: Kubernetes node group status (1 = active, 0 = inactive)
-- `pskz_k8s_nodegroup_nodes`: Number of nodes in Kubernetes node group
-- `pskz_k8s_nodegroup_cores`: Number of CPU cores per node in Kubernetes node group
-- `pskz_k8s_nodegroup_ram_mb`: Amount of RAM per node in Kubernetes node group (MB)
+# Kubernetes Metrics
+pskz_k8s_cluster_count{status="total"} <value>                # Total number of Kubernetes clusters
+pskz_k8s_cluster_count{status="<status>"} <value>             # Number of Kubernetes clusters with specific status
+pskz_k8s_cluster_status{cluster_id="id",name="name",status="status"} <value>  # Cluster status (1 = active)
+pskz_k8s_cluster_nodes{cluster_id="id",name="name"} <value>   # Number of worker nodes in cluster
+pskz_k8s_cluster_masters{cluster_id="id",name="name"} <value> # Number of master nodes in cluster
+pskz_k8s_nodegroup_status{cluster_id="id",cluster_name="name",nodegroup_id="id",name="name"} <value>  # Node group status
+pskz_k8s_nodegroup_nodes{cluster_id="id",cluster_name="name",nodegroup_id="id",name="name"} <value>   # Nodes in group
+pskz_k8s_nodegroup_cores{cluster_id="id",cluster_name="name",nodegroup_id="id",name="name"} <value>   # Cores per node
+pskz_k8s_nodegroup_ram{cluster_id="id",cluster_name="name",nodegroup_id="id",name="name"} <value>     # RAM per node (MB)
 
-### LBaaS Metrics
-- `pskz_lbaas_loadbalancer_count`: Count of load balancers by status
-- `pskz_lbaas_loadbalancer_status`: Load balancer status (1 = active, 0 = inactive)
-- `pskz_lbaas_listeners_count`: Count of listeners per load balancer
-- `pskz_lbaas_pools_count`: Count of pools per load balancer
-- `pskz_lbaas_members_count`: Count of members per load balancer
-- `pskz_lbaas_flavor`: Assigned flavor information for load balancer
-- `pskz_lbaas_floating_ip`: Whether the load balancer has a floating IP (1 = yes, 0 = no)
+# K8S Project Metrics (Dynamic metrics based on project quota)
+pskz_k8s_project_quota_<service>_<key>_limit{project_id="id",project_name="name",region_id="id"} <value>  # Quota limit
+pskz_k8s_project_quota_<service>_<key>_used{project_id="id",project_name="name",region_id="id"} <value>   # Quota usage
+pskz_k8s_project_status_count{status="<status>"} <value>      # Count of projects by status
+pskz_k8s_project_type_count{type="<type>"} <value>            # Count of projects by type
 
-### Invoice Metrics
-- `pskz_invoice_counters`: Invoice counters (total, unpaid, paid, cancelled)
-- `pskz_invoice_amount`: Invoice amount
+# LBaaS Metrics
+pskz_lbaas_loadbalancer_count{status="total"} <value>         # Total load balancers
+pskz_lbaas_loadbalancer_count{status="<status>"} <value>      # Load balancers by status
+pskz_lbaas_loadbalancer_status{id="id",name="name"} <value>   # Load balancer status (1 = active)
+pskz_lbaas_listeners_count{loadbalancer_id="id"} <value>      # Number of listeners per load balancer
+pskz_lbaas_pools_count{loadbalancer_id="id"} <value>          # Number of pools per load balancer
+pskz_lbaas_members_count{loadbalancer_id="id"} <value>        # Number of members per load balancer
+pskz_lbaas_floating_ip{loadbalancer_id="id",name="name"} <value>  # Whether load balancer has floating IP (1 = yes)
 
-### Scrape Metrics
-- `pskz_scrape_duration_seconds`: Duration of the last scrape in seconds
-- `pskz_scrape_success`: Whether the last scrape was successful (1 for success, 0 for failure)
-- `pskz_last_scrape_error`: Error status of last scrape attempt (1 if error occurred, with error type label)
+# Cloud Summary Metrics
+pskz_cloud_summary{resource="cpu_cores"} <value>              # Total CPU cores in cloud
+pskz_cloud_summary{resource="ram_gb"} <value>                 # Total RAM in cloud (GB)
+pskz_cloud_summary{resource="instances_count"} <value>        # Total number of instances
+pskz_cloud_summary{resource="volumes_count"} <value>          # Total number of volumes
+pskz_cloud_summary{resource="volumes_size_gb"} <value>        # Total volume size (GB)
+pskz_cloud_summary{resource="floating_ips_count"} <value>     # Total number of floating IPs
+pskz_cloud_summary{resource="networks_count"} <value>         # Total number of networks
+pskz_cloud_summary{resource="routers_count"} <value>          # Total number of routers
+pskz_cloud_summary{resource="security_groups_count"} <value>  # Total number of security groups
+
+# Invoice Metrics
+pskz_invoice_counters{type="total"} <value>                   # Total invoices
+pskz_invoice_counters{type="unpaid"} <value>                  # Unpaid invoices
+pskz_invoice_counters{type="paid"} <value>                    # Paid invoices
+pskz_invoice_counters{type="cancelled"} <value>               # Cancelled invoices
+
+# Exporter Status Metrics
+pskz_scrape_duration_seconds <value>                          # Duration of last scrape in seconds
+pskz_scrape_success <value>                                   # Whether last scrape was successful (1 = success)
+pskz_last_scrape_error{error_type="balance_fetch_error"} <value>  # Error in balance fetch (1 = error)
+pskz_last_scrape_error{error_type="domains_fetch_error"} <value>  # Error in domains fetch (1 = error)
+pskz_last_scrape_error{error_type="vps_servers_fetch_error"} <value>  # Error in VPS servers fetch (1 = error)
+pskz_last_scrape_error{error_type="k8s_clusters_fetch_error"} <value>  # Error in K8S clusters fetch (1 = error)
+pskz_last_scrape_error{error_type="k8s_projects_fetch_error"} <value>  # Error in K8S projects fetch (1 = error)
+pskz_last_scrape_error{error_type="lbaas_loadbalancers_fetch_error"} <value>  # Error in LBaaS fetch (1 = error)
+pskz_last_scrape_error{error_type="cloud_resources_fetch_error"} <value>  # Error in cloud resources fetch (1 = error)
+```
 
 ## Development
 

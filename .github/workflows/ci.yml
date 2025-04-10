@@ -1,0 +1,103 @@
+name: ci-builds-and-releases
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2.10.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Get short SHA
+        id: vars
+        run: echo "SHORT_SHA=$(git rev-parse --short ${{ github.sha }})" >> $GITHUB_ENV
+
+      - name: Get repo name
+        id: repo_vars
+        run: echo "GH_REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.GH_REPO_NAME }}:${{ env.SHORT_SHA }}, ${{ secrets.DOCKER_USERNAME }}/${{ env.GH_REPO_NAME }}:latest
+          push: true
+          platforms: 'linux/amd64,linux/arm64'
+          labels: ${{ github.repository }}
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-20.04
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read .release-version for Version variable
+        id: version_file
+        run: |
+          TAG_NAME=$(head -n 1 .release-version)
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          VERSION=$(tail -n 1 .release-version | sed 's/ /-/g')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Get Go Version
+        run: |
+          GOVERSION=$({ [ -f .go-version ] && cat .go-version; })
+          echo "GOVERSION=$GOVERSION" >> $GITHUB_ENV
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GOVERSION }}
+
+      - name: Get last 4 commits
+        id: last_commits
+        run: |
+          printf "Changelogs:\n" > last_commits.txt
+          git log -4 --pretty=format:"- %s (%h)" >> last_commits.txt
+
+      - name: Build Linux binary
+        run: |
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ env.VERSION }}" -o pscloud-exporter.linux ./cmd/pscloud-exporter
+
+      - name: Build macOS binary
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ env.VERSION }}" -o pscloud-exporter.darwin ./cmd/pscloud-exporter
+
+      - name: Build Windows binary
+        run: |
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ env.VERSION }}" -o pscloud-exporter.exe ./cmd/pscloud-exporter
+
+      - name: Upload binaries to GitHub Release
+        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974 # v2.1.0
+        with:
+          body_path: last_commits.txt
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            pscloud-exporter.linux
+            pscloud-exporter.darwin
+            pscloud-exporter.exe

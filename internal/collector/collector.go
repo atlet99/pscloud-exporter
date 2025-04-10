@@ -8,6 +8,7 @@ import (
 
 	"github.com/atlet99/pscloud-exporter/internal/client"
 
+	kitlog "github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -83,7 +84,8 @@ type Exporter struct {
 	lbaasFlavorMetric             *prometheus.GaugeVec
 	lbaasFloatingIPMetric         *prometheus.GaugeVec
 
-	mutex *sync.Mutex
+	mutex  *sync.Mutex
+	logger kitlog.Logger
 }
 
 // New creates a new Exporter instance
@@ -478,7 +480,8 @@ func New(c *client.Client, serviceID string) *Exporter {
 			[]string{"loadbalancer_id", "loadbalancer_name"},
 		),
 
-		mutex: &sync.Mutex{},
+		mutex:  &sync.Mutex{},
+		logger: kitlog.NewLogfmtLogger(kitlog.NewSyncWriter(log.Writer())),
 	}
 }
 
@@ -711,13 +714,13 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	// Collect information about VPS servers
-	vpsServersList, err := e.client.GetVpsServersList()
+	vpsData, err := e.client.GetVpsServersStatus()
 	if err != nil {
-		log.Printf("Error getting VPS servers list: %v", err)
-		e.lastScrapeErrorMetric.WithLabelValues("vps_servers_list_fetch_error").Set(1)
+		log.Printf("Error getting VPS server status: %v", err)
+		e.lastScrapeErrorMetric.WithLabelValues("vps_servers_fetch_error").Set(1)
 	} else {
-		e.lastScrapeErrorMetric.WithLabelValues("vps_servers_list_fetch_error").Set(0)
-		e.processVpsServersList(vpsServersList)
+		e.lastScrapeErrorMetric.WithLabelValues("vps_servers_fetch_error").Set(0)
+		e.processVpsServersStatus(vpsData)
 	}
 
 	// If service ID is specified, collect information about VPC servers
@@ -751,6 +754,16 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		e.lastScrapeErrorMetric.WithLabelValues("k8s_clusters_fetch_error").Set(0)
 		e.processK8SClusters(k8sClusters)
+	}
+
+	// Collect information about Kubernetes projects
+	k8sProjects, err := e.client.GetK8SProjects()
+	if err != nil {
+		log.Printf("Error getting K8S projects: %v", err)
+		e.lastScrapeErrorMetric.WithLabelValues("k8s_projects_fetch_error").Set(1)
+	} else {
+		e.lastScrapeErrorMetric.WithLabelValues("k8s_projects_fetch_error").Set(0)
+		e.processK8SProjects(k8sProjects, ch)
 	}
 
 	// Collect information about LBaaS load balancers
@@ -1351,86 +1364,88 @@ func (e *Exporter) processCloudInstances(instancesData map[string]interface{}) {
 	}
 }
 
-// processVpsServersList processes information about VPS servers
-func (e *Exporter) processVpsServersList(vpsServersListData map[string]interface{}) {
+// processVpsServersStatus processes information about VPS servers
+func (e *Exporter) processVpsServersStatus(vpsData map[string]interface{}) {
 	// Unpack nested objects
-	data, ok := vpsServersListData["data"].(map[string]interface{})
+	data, ok := vpsData["data"].(map[string]interface{})
 	if !ok {
-		log.Printf("Invalid data structure for VPS servers list: data field missing")
+		log.Printf("Invalid data structure for VPS servers: data field missing")
 		return
 	}
 
-	account, ok := data["account"].(map[string]interface{})
+	vps, ok := data["vps"].(map[string]interface{})
 	if !ok {
-		log.Printf("Invalid data structure for VPS servers list: account field missing")
+		log.Printf("Invalid data structure for VPS servers: vps field missing")
 		return
 	}
 
-	vpsServers, ok := account["vpsServers"].(map[string]interface{})
+	server, ok := vps["server"].(map[string]interface{})
 	if !ok {
-		log.Printf("Invalid data structure for VPS servers list: vpsServers field missing")
+		log.Printf("Invalid data structure for VPS servers: server field missing")
 		return
 	}
 
-	// Process each VPS server
-	for instanceName, server := range vpsServers {
-		serverInfo, ok := server.(map[string]interface{})
+	pagination, ok := server["pagination"].(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for VPS servers: pagination field missing")
+		return
+	}
+
+	// Count servers by status
+	statusCounts := make(map[string]int)
+
+	// Process servers
+	items, ok := pagination["items"].([]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for VPS servers: items field missing or not an array")
+		return
+	}
+
+	for _, item := range items {
+		serverInfo, ok := item.(map[string]interface{})
 		if !ok {
-			log.Printf("Invalid VPS server item: not an object")
 			continue
 		}
 
-		// RAM
-		ram, ok := serverInfo["ram"].(float64)
-		if ok {
-			e.vpsServerRamMetric.WithLabelValues(instanceName).Set(ram)
-		}
+		// Get server ID and name
+		serverId, _ := serverInfo["serverId"].(float64)
+		serverName, _ := serverInfo["name"].(string)
+		serverIdStr := fmt.Sprintf("%d", int(serverId))
 
-		// Cores
-		cores, ok := serverInfo["cores"].(float64)
-		if ok {
-			e.vpsServerCoresMetric.WithLabelValues(instanceName).Set(cores)
-		}
-
-		// Status
+		// Count status
 		status, ok := serverInfo["status"].(string)
-		if ok {
-			var statusValue float64
-			if status == "ACTIVE" {
-				statusValue = 1
-			} else {
-				statusValue = 0
+		if !ok {
+			status = "UNKNOWN"
+		}
+		statusCounts[status]++
+
+		// Set server status metric (1 if active, 0 otherwise)
+		statusValue := 0.0
+		if status == "ACTIVE" {
+			statusValue = 1.0
+		}
+		e.vpsServerStatusMetric.WithLabelValues(serverIdStr, serverName, status).Set(statusValue)
+
+		// Get region
+		regionId, _ := serverInfo["regionId"].(string)
+
+		// Get tariff info if available
+		if tariff, ok := serverInfo["tariff"].(map[string]interface{}); ok {
+			// Set RAM metric
+			if ram, ok := tariff["ramGb"].(float64); ok {
+				e.vpsServerRamMetric.WithLabelValues(serverIdStr, serverName, regionId).Set(ram)
 			}
-			e.vpsServerStatusMetric.WithLabelValues(instanceName, status).Set(statusValue)
-		}
 
-		// Disk usage
-		diskUsage, ok := serverInfo["diskUsage"].(float64)
-		if ok {
-			e.vpsServerDiskMetric.WithLabelValues(instanceName).Set(diskUsage)
-		}
-
-		// Backup usage
-		backupUsage, ok := serverInfo["backupUsage"].(float64)
-		if ok {
-			e.vpsServerBackupMetric.WithLabelValues(instanceName).Set(backupUsage)
-		}
-
-		// IPs protect
-		ipsProtect, ok := serverInfo["ipsProtect"].(bool)
-		if ok {
-			if ipsProtect {
-				e.vpsServerIpsProtectMetric.WithLabelValues(instanceName).Set(1)
-			} else {
-				e.vpsServerIpsProtectMetric.WithLabelValues(instanceName).Set(0)
+			// Set cores metric
+			if cores, ok := tariff["cores"].(float64); ok {
+				e.vpsServerCoresMetric.WithLabelValues(serverIdStr, serverName, regionId).Set(cores)
 			}
 		}
+	}
 
-		// Amount
-		amount, ok := serverInfo["amount"].(float64)
-		if ok {
-			e.vpsServerAmountMetric.WithLabelValues(instanceName).Set(amount)
-		}
+	// Set status counters
+	for status, count := range statusCounts {
+		e.vpsServerStatusMetric.WithLabelValues("all", "total", status).Set(float64(count))
 	}
 }
 
@@ -1762,5 +1777,174 @@ func (e *Exporter) processLBaaSData(lbaasData map[string]interface{}) {
 	// Set metrics for load balancer counts by status
 	for status, count := range statusCounts {
 		e.lbaasLoadBalancerCountMetric.WithLabelValues(status).Set(float64(count))
+	}
+}
+
+// processK8SProjects processes Kubernetes projects information
+func (e *Exporter) processK8SProjects(k8sProjectsData map[string]interface{}, ch chan<- prometheus.Metric) {
+	// Unpack nested objects
+	data, ok := k8sProjectsData["data"].(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for K8S projects: data field missing")
+		return
+	}
+
+	k8saas, ok := data["k8saas"].(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for K8S projects: k8saas field missing")
+		return
+	}
+
+	project, ok := k8saas["project"].(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for K8S projects: project field missing")
+		return
+	}
+
+	pagination, ok := project["pagination"].(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for K8S projects: pagination field missing")
+		return
+	}
+
+	// Process items
+	items, ok := pagination["items"].([]interface{})
+	if !ok {
+		log.Printf("Invalid data structure for K8S projects: items field missing or not an array")
+		return
+	}
+
+	// Initialize counters for project statuses
+	statusCounts := make(map[string]int)
+	typesCounts := make(map[string]int)
+
+	for _, item := range items {
+		projectItem, ok := item.(map[string]interface{})
+		if !ok {
+			log.Printf("Invalid project item: not an object")
+			continue
+		}
+
+		// Get project ID and name
+		projectId := "unknown"
+		if pid, ok := projectItem["projectId"].(string); ok {
+			projectId = pid
+		} else if pid, ok := projectItem["projectId"].(float64); ok {
+			projectId = fmt.Sprintf("%.0f", pid)
+		}
+
+		projectName := projectId
+		if pname, ok := projectItem["projectName"].(string); ok && pname != "" {
+			projectName = pname
+		}
+
+		// Get status and type
+		status, _ := projectItem["status"].(string)
+		projectType, _ := projectItem["type"].(string)
+
+		// Count projects by status and type
+		if status != "" {
+			statusCounts[status]++
+		}
+
+		if projectType != "" {
+			typesCounts[projectType]++
+		}
+
+		// Process OpenStack services quota
+		if openstackServices, ok := projectItem["openstackServices"].([]interface{}); ok {
+			for _, service := range openstackServices {
+				serviceItem, ok := service.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				serviceName, _ := serviceItem["name"].(string)
+				regionId, _ := serviceItem["regionId"].(string)
+
+				// Process quota
+				if quota, ok := serviceItem["quota"].([]interface{}); ok {
+					for _, q := range quota {
+						quotaItem, ok := q.(map[string]interface{})
+						if !ok {
+							continue
+						}
+
+						key, ok := quotaItem["key"].(string)
+						if !ok {
+							continue
+						}
+
+						// Set limit metric
+						if limit, ok := quotaItem["limit"].(float64); ok {
+							name := fmt.Sprintf("pskz_k8s_project_quota_%s_%s_limit", serviceName, key)
+							desc := prometheus.NewDesc(
+								name,
+								fmt.Sprintf("Quota limit for %s %s", serviceName, key),
+								[]string{"project_id", "project_name", "region_id"},
+								nil,
+							)
+							ch <- prometheus.MustNewConstMetric(
+								desc,
+								prometheus.GaugeValue,
+								limit,
+								projectId, projectName, regionId,
+							)
+						}
+
+						// Set usage metric
+						if inUse, ok := quotaItem["inUse"].(float64); ok {
+							name := fmt.Sprintf("pskz_k8s_project_quota_%s_%s_used", serviceName, key)
+							desc := prometheus.NewDesc(
+								name,
+								fmt.Sprintf("Quota usage for %s %s", serviceName, key),
+								[]string{"project_id", "project_name", "region_id"},
+								nil,
+							)
+							ch <- prometheus.MustNewConstMetric(
+								desc,
+								prometheus.GaugeValue,
+								inUse,
+								projectId, projectName, regionId,
+							)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Set metrics for project counts by status
+	for status, count := range statusCounts {
+		name := "pskz_k8s_project_status_count"
+		desc := prometheus.NewDesc(
+			name,
+			"Number of Kubernetes projects by status",
+			[]string{"status"},
+			nil,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			desc,
+			prometheus.GaugeValue,
+			float64(count),
+			status,
+		)
+	}
+
+	// Set metrics for project counts by type
+	for projectType, count := range typesCounts {
+		name := "pskz_k8s_project_type_count"
+		desc := prometheus.NewDesc(
+			name,
+			"Number of Kubernetes projects by type",
+			[]string{"type"},
+			nil,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			desc,
+			prometheus.GaugeValue,
+			float64(count),
+			projectType,
+		)
 	}
 }
